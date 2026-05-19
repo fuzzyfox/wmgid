@@ -9,6 +9,20 @@ const SECRET = 'test-secret-of-sufficient-length-for-hmac';
 
 const noopTracker: Tracker = { track: async () => {} };
 
+type TrackCall = { name: string; path: string };
+
+function capturingTracker(): { tracker: Tracker; calls: TrackCall[] } {
+  const calls: TrackCall[] = [];
+  return {
+    tracker: {
+      track: async (name, _req, path) => {
+        calls.push({ name, path });
+      },
+    },
+    calls,
+  };
+}
+
 function fakeAuth(overrides: Partial<{ verified: VerifiedClaims; authorizeUrl: string }> = {}) {
   return {
     getAuthorizeUrl: (state: string) =>
@@ -242,6 +256,98 @@ test('responses carry CSP, HSTS, nosniff, and a strict referrer policy', async (
   assert.equal(res.headers.get('strict-transport-security'), 'max-age=31536000');
   assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+});
+
+test('GET / records one pageview, regardless of session state', async () => {
+  const { tracker, calls } = capturingTracker();
+  const app = createApp({ sessionSecret: SECRET, auth: fakeAuth(), isProd: false, tracker });
+  await app.request('/');
+  assert.deepEqual(calls, [{ name: 'pageview', path: '/' }]);
+});
+
+test('GET /auth/google records Sign-in started before redirecting', async () => {
+  const { tracker, calls } = capturingTracker();
+  const app = createApp({ sessionSecret: SECRET, auth: fakeAuth(), isProd: false, tracker });
+  const res = await app.request('/auth/google');
+  assert.equal(res.status, 302);
+  assert.deepEqual(calls, [{ name: 'Sign-in started', path: '/auth/google' }]);
+});
+
+test('Google cancel records Sign-in cancelled', async () => {
+  const { tracker, calls } = capturingTracker();
+  const app = createApp({ sessionSecret: SECRET, auth: fakeAuth(), isProd: false, tracker });
+  await app.request('/auth/google/callback?error=access_denied');
+  assert.deepEqual(calls, [{ name: 'Sign-in cancelled', path: '/auth/google/callback' }]);
+});
+
+test('successful callback records Sign-in success', async () => {
+  const { tracker, calls } = capturingTracker();
+  const app = createApp({ sessionSecret: SECRET, auth: fakeAuth(), isProd: false, tracker });
+  const res = await app.request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.equal(res.status, 302);
+  assert.deepEqual(calls, [{ name: 'Sign-in success', path: '/auth/google/callback' }]);
+});
+
+test('hd-mismatch callback records Sign-in rejected', async () => {
+  const { tracker, calls } = capturingTracker();
+  const app = createApp({
+    sessionSecret: SECRET,
+    auth: fakeAuth({ verified: { sub: 'x', email: 'jane@other.com', hd: 'other.com' } as any }),
+    allowedHd: 'example.com',
+    isProd: false,
+    tracker,
+  });
+  await app.request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.deepEqual(calls, [{ name: 'Sign-in rejected', path: '/auth/google/callback' }]);
+});
+
+test('verification failure records Sign-in verify failed', async () => {
+  const { tracker, calls } = capturingTracker();
+  const app = createApp({
+    sessionSecret: SECRET,
+    isProd: false,
+    tracker,
+    auth: {
+      getAuthorizeUrl: () => '',
+      verifyCallback: async () => {
+        throw new Error('signature mismatch');
+      },
+    },
+  });
+  await app.request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.deepEqual(calls, [{ name: 'Sign-in verify failed', path: '/auth/google/callback' }]);
+});
+
+test('a throwing tracker never breaks the user-facing response', async () => {
+  const throwingTracker: Tracker = {
+    track: async () => {
+      throw new Error('plausible exploded');
+    },
+  };
+  const app = createApp({
+    sessionSecret: SECRET,
+    auth: fakeAuth(),
+    isProd: false,
+    tracker: throwingTracker,
+  });
+
+  const home = await app.request('/');
+  assert.equal(home.status, 200);
+
+  const start = await app.request('/auth/google');
+  assert.equal(start.status, 302);
+
+  const success = await app.request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.equal(success.status, 302);
+  assert.match(success.headers.get('set-cookie') ?? '', new RegExp(`${COOKIE_NAME}=`));
 });
 
 test('POST /logout clears the session cookie and redirects to /', async () => {

@@ -47,7 +47,16 @@ export function createApp(deps: AppDeps) {
   app.get('/healthz', (c) => c.text('ok'));
   app.get('/public/*', serveStatic({ root: './' }));
 
+  const track = (name: string, c: { req: { header(n: string): string | undefined } }, path: string) => {
+    try {
+      void deps.tracker.track(name, c.req, path).catch(() => {});
+    } catch {
+      // swallow synchronous throws from misbehaving trackers
+    }
+  };
+
   app.get('/', (c) => {
+    track('pageview', c, '/');
     const cancelled = c.req.query('cancelled') === '1';
     const cookie = getCookie(c, COOKIE_NAME);
 
@@ -65,6 +74,7 @@ export function createApp(deps: AppDeps) {
   });
 
   app.get('/auth/google', (c) => {
+    track('Sign-in started', c, '/auth/google');
     const state = crypto.randomUUID();
 
     setCookie(c, STATE_COOKIE, state, {
@@ -86,7 +96,10 @@ export function createApp(deps: AppDeps) {
     deleteCookie(c, STATE_COOKIE);
 
     // User clicked "Cancel" at Google's consent screen → bounce home quietly.
-    if (error === 'access_denied') return c.redirect('/?cancelled=1');
+    if (error === 'access_denied') {
+      track('Sign-in cancelled', c, '/auth/google/callback');
+      return c.redirect('/?cancelled=1');
+    }
 
     if (!code || !state || !expectedState || state !== expectedState) {
       return c.text('invalid oauth state', 400);
@@ -97,6 +110,7 @@ export function createApp(deps: AppDeps) {
       const hdCheck = checkHd({ received: verified.hd, allowed: deps.allowedHd });
 
       if (!hdCheck.ok) {
+        track('Sign-in rejected', c, '/auth/google/callback');
         console.warn(
           `[wmgid] hd rejected: required=${hdCheck.required} received=${hdCheck.received} email=${verified.email ?? '(none)'}`,
         );
@@ -119,10 +133,12 @@ export function createApp(deps: AppDeps) {
         path: '/',
       });
 
+      track('Sign-in success', c, '/auth/google/callback');
       console.log(`[wmgid] callback ok: sub=${verified.sub} email=${verified.email ?? '(none)'}`);
 
       return c.redirect('/');
     } catch (err) {
+      track('Sign-in verify failed', c, '/auth/google/callback');
       console.error('[wmgid] callback verification failed:', (err as Error).message);
 
       return c.html(<VerifyFailed />, 400);
