@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { createAuth } from './auth.js';
+import { createAnalytics } from './analytics.js';
 
 function required(name: string): string {
   const v = process.env[name];
@@ -15,9 +16,16 @@ const baseUrl = required('BASE_URL');
 
 const auth = createAuth({ clientId, clientSecret, baseUrl });
 
+const tracker = createAnalytics({
+  domain: process.env.PLAUSIBLE_DOMAIN || undefined,
+  host: process.env.PLAUSIBLE_HOST || 'plausible.io',
+  baseUrl,
+});
+
 export const app = createApp({
   sessionSecret,
   auth,
+  tracker,
   allowedHd: process.env.ALLOWED_HD || undefined,
   isProd: process.env.NODE_ENV !== 'development',
 });

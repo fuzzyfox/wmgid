@@ -6,6 +6,7 @@ import { pickAllowlistedClaims } from './claims.js';
 import { COOKIE_NAME, encodeSession, decodeSession } from './session.js';
 import { checkHd } from './hdPolicy.js';
 import type { VerifiedClaims } from './auth.js';
+import type { Tracker } from './analytics.js';
 import { Card } from './views/card.js';
 import { Login } from './views/login.js';
 import { Rejected } from './views/rejected.js';
@@ -21,6 +22,7 @@ export type AppDeps = {
   };
   allowedHd?: string;
   isProd?: boolean;
+  tracker: Tracker;
 };
 
 export function createApp(deps: AppDeps) {

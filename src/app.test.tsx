@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import { createApp } from './app.js';
 import { encodeSession, COOKIE_NAME } from './session.js';
 import type { VerifiedClaims } from './auth.js';
+import type { Tracker } from './analytics.js';
 
 const SECRET = 'test-secret-of-sufficient-length-for-hmac';
+
+const noopTracker: Tracker = { track: async () => {} };
 
 function fakeAuth(overrides: Partial<{ verified: VerifiedClaims; authorizeUrl: string }> = {}) {
   return {
@@ -32,6 +35,7 @@ function makeApp(
     sessionSecret: SECRET,
     auth: fakeAuth(authOverrides),
     isProd: false,
+    tracker: noopTracker,
     ...appOverrides,
   });
 }
@@ -142,6 +146,7 @@ test('/auth/google forwards hd= as a hint when restricted', async () => {
     sessionSecret: SECRET,
     isProd: false,
     allowedHd: 'example.com',
+    tracker: noopTracker,
     auth: {
       getAuthorizeUrl: (state, hd) => {
         captured = String(hd);
@@ -210,6 +215,7 @@ test('a token verification failure renders the verify-failed screen, not raw tex
   const app = createApp({
     sessionSecret: SECRET,
     isProd: false,
+    tracker: noopTracker,
     auth: {
       getAuthorizeUrl: () => '',
       verifyCallback: async () => {
