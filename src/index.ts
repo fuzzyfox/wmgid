@@ -1,34 +1,29 @@
-import { Hono } from 'hono';
-import { serveStatic } from '@hono/node-server/serve-static';
 import { serve } from '@hono/node-server';
+import { createApp } from './app.js';
+import { createAuth } from './auth.js';
 
-export const app = new Hono();
+function required(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`missing required env var: ${name}`);
+  return v;
+}
 
-app.get('/healthz', (c) => c.text('ok'));
+const clientId = required('GOOGLE_CLIENT_ID');
+const clientSecret = required('GOOGLE_CLIENT_SECRET');
+const sessionSecret = required('SESSION_SECRET');
+const baseUrl = required('BASE_URL');
 
-app.get('/public/*', serveStatic({ root: './' }));
+const auth = createAuth({ clientId, clientSecret, baseUrl });
 
-app.get('/', (c) => {
-  return c.html(
-    `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>wmgid</title>
-    <link rel="stylesheet" href="/public/style.css" />
-  </head>
-  <body class="bg-zinc-950 text-emerald-300 font-mono p-8">
-    <pre>❯ wmgid --boot
-ok — walking skeleton</pre>
-  </body>
-</html>`
-  );
+export const app = createApp({
+  sessionSecret,
+  auth,
+  isProd: process.env.NODE_ENV !== 'development',
 });
 
 const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const port = Number(process.env.PORT ?? 3000);
   serve({ fetch: app.fetch, port });
-  console.log(`[wmgid] listening on :${port}`);
+  console.log(`[wmgid] boot — listening on :${port} base=${baseUrl}`);
 }
