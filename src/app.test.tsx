@@ -24,8 +24,16 @@ function fakeAuth(overrides: Partial<{ verified: VerifiedClaims; authorizeUrl: s
   };
 }
 
-function makeApp(authOverrides: Parameters<typeof fakeAuth>[0] = {}) {
-  return createApp({ sessionSecret: SECRET, auth: fakeAuth(authOverrides), isProd: false });
+function makeApp(
+  authOverrides: Parameters<typeof fakeAuth>[0] = {},
+  appOverrides: { allowedHd?: string } = {},
+) {
+  return createApp({
+    sessionSecret: SECRET,
+    auth: fakeAuth(authOverrides),
+    isProd: false,
+    ...appOverrides,
+  });
 }
 
 test('GET / without a cookie renders the login screen', async () => {
@@ -115,6 +123,75 @@ test('callback drops exp/at_hash/nonce when persisting the session', async () =>
   assert.equal('at_hash' in decoded, false);
   assert.equal('nonce' in decoded, false);
   assert.equal(decoded.sub, 'x');
+});
+
+test('login screen surfaces the restricted-hd hint when configured', async () => {
+  const restricted = makeApp({}, { allowedHd: 'example.com' });
+  const res = await restricted.request('/');
+  const body = await res.text();
+  assert.match(body, /restricted to @example\.com/);
+
+  const open = makeApp();
+  const openBody = await (await open.request('/')).text();
+  assert.equal(/restricted to @/.test(openBody), false);
+});
+
+test('/auth/google forwards hd= as a hint when restricted', async () => {
+  let captured = '';
+  const app = createApp({
+    sessionSecret: SECRET,
+    isProd: false,
+    allowedHd: 'example.com',
+    auth: {
+      getAuthorizeUrl: (state, hd) => {
+        captured = String(hd);
+        return `https://accounts.google.com/?state=${state}&hd=${hd ?? ''}`;
+      },
+      verifyCallback: async () => ({ sub: 'x' }) as any,
+    },
+  });
+  await app.request('/auth/google');
+  assert.equal(captured, 'example.com');
+});
+
+test('callback rejects a Workspace mismatch and does not set the session cookie', async () => {
+  const app = makeApp(
+    { verified: { sub: 'x', email: 'jane@other.com', hd: 'other.com' } as any },
+    { allowedHd: 'example.com' },
+  );
+  const res = await app.request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.equal(res.status, 403);
+  const body = await res.text();
+  assert.match(body, /access denied/);
+  assert.match(body, /required hd[^&]*&quot;example\.com&quot;/);
+  assert.match(body, /received hd[^&]*&quot;other\.com&quot;/);
+  assert.match(body, /jane@other\.com/);
+  const setCookie = res.headers.get('set-cookie') ?? '';
+  assert.equal(new RegExp(`${COOKIE_NAME}=[^;,]+`).test(setCookie), false);
+});
+
+test('callback rejects a personal account (no hd) and shows (none) received', async () => {
+  const app = makeApp(
+    { verified: { sub: 'x', email: 'jane@gmail.com' } as any },
+    { allowedHd: 'example.com' },
+  );
+  const res = await app.request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.equal(res.status, 403);
+  const body = await res.text();
+  assert.match(body, /\(none\)/);
+});
+
+test('callback accepts a personal account when no restriction is configured', async () => {
+  const app = makeApp({ verified: { sub: 'x', email: 'jane@gmail.com' } as any });
+  const res = await app.request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.equal(res.status, 302);
+  assert.match(res.headers.get('set-cookie') ?? '', new RegExp(`${COOKIE_NAME}=`));
 });
 
 test('POST /logout clears the session cookie and redirects to /', async () => {

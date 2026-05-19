@@ -18,6 +18,7 @@ const auth = createAuth({ clientId, clientSecret, baseUrl });
 export const app = createApp({
   sessionSecret,
   auth,
+  allowedHd: process.env.ALLOWED_HD || undefined,
   isProd: process.env.NODE_ENV !== 'development',
 });
 

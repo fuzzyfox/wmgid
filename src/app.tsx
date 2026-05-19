@@ -3,9 +3,11 @@ import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { pickAllowlistedClaims } from './claims.js';
 import { COOKIE_NAME, encodeSession, decodeSession } from './session.js';
+import { checkHd } from './hdPolicy.js';
 import type { VerifiedClaims } from './auth.js';
 import { Card } from './views/card.js';
 import { Login } from './views/login.js';
+import { Rejected } from './views/rejected.js';
 
 const STATE_COOKIE = 'wmgid_oauth_state';
 
@@ -15,6 +17,7 @@ export type AppDeps = {
     getAuthorizeUrl: (state: string, hd?: string) => string;
     verifyCallback: (code: string) => Promise<VerifiedClaims>;
   };
+  allowedHd?: string;
   isProd?: boolean;
 };
 
@@ -27,11 +30,11 @@ export function createApp(deps: AppDeps) {
 
   app.get('/', (c) => {
     const cookie = getCookie(c, COOKIE_NAME);
-    if (!cookie) return c.html(<Login />);
+    if (!cookie) return c.html(<Login restrictedHd={deps.allowedHd} />);
     const claims = decodeSession(cookie, deps.sessionSecret);
     if (!claims) {
       deleteCookie(c, COOKIE_NAME);
-      return c.html(<Login />);
+      return c.html(<Login restrictedHd={deps.allowedHd} />);
     }
     return c.html(<Card claims={claims} />);
   });
@@ -44,7 +47,7 @@ export function createApp(deps: AppDeps) {
       sameSite: 'Lax',
       path: '/',
     });
-    return c.redirect(deps.auth.getAuthorizeUrl(state));
+    return c.redirect(deps.auth.getAuthorizeUrl(state, deps.allowedHd));
   });
 
   app.get('/auth/google/callback', async (c) => {
@@ -59,6 +62,22 @@ export function createApp(deps: AppDeps) {
 
     try {
       const verified = await deps.auth.verifyCallback(code);
+
+      const hdCheck = checkHd({ received: verified.hd, allowed: deps.allowedHd });
+      if (!hdCheck.ok) {
+        console.warn(
+          `[wmgid] hd rejected: required=${hdCheck.required} received=${hdCheck.received} email=${verified.email ?? '(none)'}`,
+        );
+        return c.html(
+          <Rejected
+            required={hdCheck.required}
+            received={hdCheck.received}
+            email={verified.email ?? '(none)'}
+          />,
+          403,
+        );
+      }
+
       const stored = pickAllowlistedClaims(verified as Record<string, unknown>);
       setCookie(c, COOKIE_NAME, encodeSession(stored, deps.sessionSecret), {
         httpOnly: true,
@@ -66,6 +85,7 @@ export function createApp(deps: AppDeps) {
         sameSite: 'Lax',
         path: '/',
       });
+      console.log(`[wmgid] callback ok: sub=${verified.sub} email=${verified.email ?? '(none)'}`);
       return c.redirect('/');
     } catch (err) {
       console.error('[wmgid] callback verification failed:', (err as Error).message);
