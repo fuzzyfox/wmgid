@@ -34,8 +34,10 @@ export type StoredClaims = {
 
 export function pickAllowlistedClaims(raw: Record<string, unknown>): StoredClaims {
   const out: Record<string, unknown> = {};
+
   for (const key of ALLOWLISTED_CLAIM_KEYS) {
     if (key in raw) out[key] = raw[key];
   }
+
   return out as StoredClaims;
 }

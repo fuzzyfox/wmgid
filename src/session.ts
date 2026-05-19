@@ -13,14 +13,17 @@ export function encodeSession(claims: StoredClaims, secret: string): string {
 }
 
 export function decodeSession(cookie: string, secret: string): StoredClaims | null {
-  if (!cookie || typeof cookie !== 'string') return null;
+  if (!cookie) return null;
+
   const parts = cookie.split('.');
   if (parts.length !== 2) return null;
+
   const [payload, sig] = parts;
 
   const expected = sign(payload, secret);
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
+
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
 
   try {

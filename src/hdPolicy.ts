@@ -16,5 +16,6 @@ export type HdCheckResult =
 export function checkHd({ received, allowed }: HdCheckInput): HdCheckResult {
   if (!allowed) return { ok: true };
   if (received === allowed) return { ok: true };
+
   return { ok: false, received: received ?? '(none)', required: allowed };
 }

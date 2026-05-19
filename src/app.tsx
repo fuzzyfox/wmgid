@@ -48,24 +48,30 @@ export function createApp(deps: AppDeps) {
   app.get('/', (c) => {
     const cancelled = c.req.query('cancelled') === '1';
     const cookie = getCookie(c, COOKIE_NAME);
+
     if (!cookie)
       return c.html(<Login restrictedHd={deps.allowedHd} cancelled={cancelled} />);
+
     const claims = decodeSession(cookie, deps.sessionSecret);
+
     if (!claims) {
       deleteCookie(c, COOKIE_NAME);
       return c.html(<Login restrictedHd={deps.allowedHd} cancelled={cancelled} />);
     }
+
     return c.html(<Card claims={claims} />);
   });
 
   app.get('/auth/google', (c) => {
     const state = crypto.randomUUID();
+
     setCookie(c, STATE_COOKIE, state, {
       httpOnly: true,
       secure,
       sameSite: 'Lax',
       path: '/',
     });
+
     return c.redirect(deps.auth.getAuthorizeUrl(state, deps.allowedHd));
   });
 
@@ -74,6 +80,7 @@ export function createApp(deps: AppDeps) {
     const code = c.req.query('code');
     const state = c.req.query('state');
     const expectedState = getCookie(c, STATE_COOKIE);
+
     deleteCookie(c, STATE_COOKIE);
 
     // User clicked "Cancel" at Google's consent screen → bounce home quietly.
@@ -85,8 +92,8 @@ export function createApp(deps: AppDeps) {
 
     try {
       const verified = await deps.auth.verifyCallback(code);
-
       const hdCheck = checkHd({ received: verified.hd, allowed: deps.allowedHd });
+
       if (!hdCheck.ok) {
         console.warn(
           `[wmgid] hd rejected: required=${hdCheck.required} received=${hdCheck.received} email=${verified.email ?? '(none)'}`,
@@ -102,16 +109,20 @@ export function createApp(deps: AppDeps) {
       }
 
       const stored = pickAllowlistedClaims(verified as Record<string, unknown>);
+
       setCookie(c, COOKIE_NAME, encodeSession(stored, deps.sessionSecret), {
         httpOnly: true,
         secure,
         sameSite: 'Lax',
         path: '/',
       });
+
       console.log(`[wmgid] callback ok: sub=${verified.sub} email=${verified.email ?? '(none)'}`);
+
       return c.redirect('/');
     } catch (err) {
       console.error('[wmgid] callback verification failed:', (err as Error).message);
+
       return c.html(<VerifyFailed />, 400);
     }
   });
