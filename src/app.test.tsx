@@ -258,6 +258,62 @@ test('responses carry CSP, HSTS, nosniff, and a strict referrer policy', async (
   assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
 });
 
+function assertNoStore(res: Response) {
+  assert.equal(res.headers.get('cache-control'), 'private, no-store');
+  assert.equal(res.headers.get('cloudflare-cdn-cache-control'), 'no-store');
+  assert.match(res.headers.get('vary') ?? '', /\bCookie\b/);
+}
+
+test('GET / (login page) is marked uncacheable for shared caches', async () => {
+  const res = await makeApp().request('/');
+  assertNoStore(res);
+});
+
+test('GET / (with session) is marked uncacheable for shared caches', async () => {
+  const cookie = encodeSession({ sub: '42', email: 'jane.doe@example.com' }, SECRET);
+  const res = await makeApp().request('/', {
+    headers: { cookie: `${COOKIE_NAME}=${cookie}` },
+  });
+  assertNoStore(res);
+});
+
+test('GET /auth/google redirect is marked uncacheable', async () => {
+  const res = await makeApp().request('/auth/google');
+  assertNoStore(res);
+});
+
+test('successful callback redirect with Set-Cookie is marked uncacheable', async () => {
+  const res = await makeApp().request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.equal(res.status, 302);
+  assert.match(res.headers.get('set-cookie') ?? '', new RegExp(`${COOKIE_NAME}=`));
+  assertNoStore(res);
+});
+
+test('POST /logout is marked uncacheable', async () => {
+  const res = await makeApp().request('/logout', { method: 'POST' });
+  assertNoStore(res);
+});
+
+test('GET /healthz is marked uncacheable', async () => {
+  const res = await makeApp().request('/healthz');
+  assertNoStore(res);
+});
+
+test('cache middleware does not overwrite a route-supplied Cache-Control', async () => {
+  // Mirrors what serveStatic does for /public/* — assert the no-store default
+  // never clobbers an explicit Cache-Control set by a route handler.
+  const app = createApp({ sessionSecret: SECRET, auth: fakeAuth(), isProd: false, tracker: noopTracker });
+  app.get('/__cached', (c) => {
+    c.header('Cache-Control', 'public, max-age=14400');
+    return c.text('ok');
+  });
+  const res = await app.request('/__cached');
+  assert.equal(res.headers.get('cache-control'), 'public, max-age=14400');
+  assert.equal(res.headers.get('cloudflare-cdn-cache-control'), null);
+});
+
 test('GET / records one pageview, regardless of session state', async () => {
   const { tracker, calls } = capturingTracker();
   const app = createApp({ sessionSecret: SECRET, auth: fakeAuth(), isProd: false, tracker });

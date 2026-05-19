@@ -44,6 +44,18 @@ export function createApp(deps: AppDeps) {
     }),
   );
 
+  // Cloudflare and other shared caches must never serve one user's rendered
+  // HTML to another. `/public/*` is exempt because serveStatic supplies its
+  // own Cache-Control, which the conditional below preserves.
+  app.use('*', async (c, next) => {
+    await next();
+    if (c.res.headers.has('Cache-Control')) return;
+    c.res.headers.set('Cache-Control', 'private, no-store');
+    c.res.headers.set('Cloudflare-CDN-Cache-Control', 'no-store');
+    const vary = c.res.headers.get('Vary');
+    c.res.headers.set('Vary', vary ? `${vary}, Cookie` : 'Cookie');
+  });
+
   app.get('/healthz', (c) => c.text('ok'));
   app.get('/public/*', serveStatic({ root: './' }));
 
