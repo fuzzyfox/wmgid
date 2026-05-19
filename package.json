@@ -10,7 +10,7 @@
     "build:ts": "tsc",
     "build": "npm run build:css && npm run build:js && npm run build:ts",
     "dev:css": "tailwindcss -i ./src/styles.css -o ./public/style.css --watch",
-    "dev:ts": "tsx watch src/index.ts",
+    "dev:ts": "tsx watch --env-file-if-exists=.env src/index.ts",
     "dev": "npm run build:css && npm run dev:ts",
     "start": "node dist/index.js",
     "test": "tsx --test 'src/**/*.test.ts' 'src/**/*.test.tsx'"
