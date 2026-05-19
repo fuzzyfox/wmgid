@@ -117,6 +117,13 @@ Set via Hono's `secureHeaders()` middleware:
 - `X-Content-Type-Options: nosniff`
 - `Referrer-Policy: strict-origin-when-cross-origin`
 
+Set via a follow-on cache middleware on every dynamic response:
+- `Cache-Control: private, no-store`
+- `Cloudflare-CDN-Cache-Control: no-store`
+- `Vary: Cookie` (appended to any existing `Vary`)
+
+Prevents Cloudflare, browser shared caches, and any intermediate proxy from serving one signed-in user's rendered HTML to another. Static assets under `/public/*` keep their `serveStatic`-supplied `Cache-Control: max-age=14400` — the middleware only writes when no `Cache-Control` is already present.
+
 CSRF on the OAuth flow handled via the `state` parameter (supported by `@hono/oauth-providers`).
 
 ## Testing Decisions
