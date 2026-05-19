@@ -194,6 +194,50 @@ test('callback accepts a personal account when no restriction is configured', as
   assert.match(res.headers.get('set-cookie') ?? '', new RegExp(`${COOKIE_NAME}=`));
 });
 
+test('Google "Cancel" bounces to / with the cancelled banner shown', async () => {
+  const app = makeApp();
+  const res = await app.request('/auth/google/callback?error=access_denied');
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get('location'), '/?cancelled=1');
+
+  const home = await app.request('/?cancelled=1');
+  const body = await home.text();
+  assert.match(body, /data-testid="cancelled-banner"/);
+  assert.match(body, /sign-in cancelled/);
+});
+
+test('a token verification failure renders the verify-failed screen, not raw text', async () => {
+  const app = createApp({
+    sessionSecret: SECRET,
+    isProd: false,
+    auth: {
+      getAuthorizeUrl: () => '',
+      verifyCallback: async () => {
+        throw new Error('signature mismatch');
+      },
+    },
+  });
+  const res = await app.request('/auth/google/callback?code=c&state=ok', {
+    headers: { cookie: 'wmgid_oauth_state=ok' },
+  });
+  assert.equal(res.status, 400);
+  const body = await res.text();
+  assert.match(body, /data-testid="verify-failed"/);
+  assert.match(body, /try again/);
+  // Must never echo any token-shaped string into the body.
+  assert.equal(/signature mismatch/.test(body), false);
+});
+
+test('responses carry CSP, HSTS, nosniff, and a strict referrer policy', async () => {
+  const res = await makeApp().request('/');
+  assert.match(res.headers.get('content-security-policy') ?? '', /default-src 'self'/);
+  assert.match(res.headers.get('content-security-policy') ?? '', /lh3\.googleusercontent\.com/);
+  assert.match(res.headers.get('content-security-policy') ?? '', /'unsafe-eval'/);
+  assert.equal(res.headers.get('strict-transport-security'), 'max-age=31536000');
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+});
+
 test('POST /logout clears the session cookie and redirects to /', async () => {
   const res = await makeApp().request('/logout', { method: 'POST' });
   assert.equal(res.status, 302);

@@ -55,4 +55,24 @@ dokku config:set wmgid ALLOWED_HD=example.com
 npm test
 ```
 
-Tests cover the pure modules (`claims`, `hdPolicy`) and route-level integration via `app.request()`. Views are smoke-tested manually before each deploy.
+Tests cover the pure modules (`claims`, `hdPolicy`, session HMAC, view formatters) and route-level integration via Hono's `app.request()`. The UI is exercised through its rendered HTML — there is no browser automation. Run the dev server and click through the flow before deploying.
+
+## Logging
+
+The server logs to stdout. Events covered:
+
+- boot (port + `BASE_URL`)
+- successful callback (`sub` + `email`)
+- `hd` rejection (required, received, email)
+- token verification failure (the error message — never the raw ID token)
+
+Cookie sets, healthchecks, and page renders are deliberately not logged.
+
+## Security headers
+
+`hono/secure-headers` middleware sets a CSP that allows `'self'` plus Google's avatar host, HSTS (1 year), `X-Content-Type-Options: nosniff`, and `Referrer-Policy: strict-origin-when-cross-origin`. CSRF on the OAuth flow is handled via a `state` round-tripped through an HttpOnly cookie. The CSP allows `'unsafe-eval'` because Alpine.js needs it — trade-off accepted (see PRD).
+
+## ADRs
+
+- [ADR-0001 — stateless signed-cookie session](docs/adr/0001-stateless-signed-cookie-session.md)
+- [ADR-0002 — opt-in hosted-domain restriction](docs/adr/0002-opt-in-hosted-domain-restriction.md)

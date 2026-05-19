@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
+import { secureHeaders } from 'hono/secure-headers';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { pickAllowlistedClaims } from './claims.js';
 import { COOKIE_NAME, encodeSession, decodeSession } from './session.js';
@@ -8,6 +9,7 @@ import type { VerifiedClaims } from './auth.js';
 import { Card } from './views/card.js';
 import { Login } from './views/login.js';
 import { Rejected } from './views/rejected.js';
+import { VerifyFailed } from './views/verifyFailed.js';
 
 const STATE_COOKIE = 'wmgid_oauth_state';
 
@@ -25,16 +27,33 @@ export function createApp(deps: AppDeps) {
   const app = new Hono();
   const secure = deps.isProd !== false;
 
+  app.use(
+    '*',
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", 'https://lh3.googleusercontent.com', 'data:'],
+        scriptSrc: ["'self'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
+      strictTransportSecurity: 'max-age=31536000',
+      xContentTypeOptions: 'nosniff',
+      referrerPolicy: 'strict-origin-when-cross-origin',
+    }),
+  );
+
   app.get('/healthz', (c) => c.text('ok'));
   app.get('/public/*', serveStatic({ root: './' }));
 
   app.get('/', (c) => {
+    const cancelled = c.req.query('cancelled') === '1';
     const cookie = getCookie(c, COOKIE_NAME);
-    if (!cookie) return c.html(<Login restrictedHd={deps.allowedHd} />);
+    if (!cookie)
+      return c.html(<Login restrictedHd={deps.allowedHd} cancelled={cancelled} />);
     const claims = decodeSession(cookie, deps.sessionSecret);
     if (!claims) {
       deleteCookie(c, COOKIE_NAME);
-      return c.html(<Login restrictedHd={deps.allowedHd} />);
+      return c.html(<Login restrictedHd={deps.allowedHd} cancelled={cancelled} />);
     }
     return c.html(<Card claims={claims} />);
   });
@@ -51,10 +70,14 @@ export function createApp(deps: AppDeps) {
   });
 
   app.get('/auth/google/callback', async (c) => {
+    const error = c.req.query('error');
     const code = c.req.query('code');
     const state = c.req.query('state');
     const expectedState = getCookie(c, STATE_COOKIE);
     deleteCookie(c, STATE_COOKIE);
+
+    // User clicked "Cancel" at Google's consent screen → bounce home quietly.
+    if (error === 'access_denied') return c.redirect('/?cancelled=1');
 
     if (!code || !state || !expectedState || state !== expectedState) {
       return c.text('invalid oauth state', 400);
@@ -89,7 +112,7 @@ export function createApp(deps: AppDeps) {
       return c.redirect('/');
     } catch (err) {
       console.error('[wmgid] callback verification failed:', (err as Error).message);
-      return c.text('token verification failed', 400);
+      return c.html(<VerifyFailed />, 400);
     }
   });
 
