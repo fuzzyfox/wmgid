@@ -4,6 +4,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { pickAllowlistedClaims } from './claims.js';
 import { COOKIE_NAME, encodeSession, decodeSession } from './session.js';
 import type { VerifiedClaims } from './auth.js';
+import { Card } from './views/card.js';
+import { Login } from './views/login.js';
 
 const STATE_COOKIE = 'wmgid_oauth_state';
 
@@ -25,13 +27,13 @@ export function createApp(deps: AppDeps) {
 
   app.get('/', (c) => {
     const cookie = getCookie(c, COOKIE_NAME);
-    if (!cookie) return renderLogin(c);
+    if (!cookie) return c.html(<Login />);
     const claims = decodeSession(cookie, deps.sessionSecret);
     if (!claims) {
       deleteCookie(c, COOKIE_NAME);
-      return renderLogin(c);
+      return c.html(<Login />);
     }
-    return renderCard(c, claims);
+    return c.html(<Card claims={claims} />);
   });
 
   app.get('/auth/google', (c) => {
@@ -77,36 +79,4 @@ export function createApp(deps: AppDeps) {
   });
 
   return app;
-}
-
-function renderLogin(c: any) {
-  return c.html(
-    `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>wmgid</title>
-<link rel="stylesheet" href="/public/style.css"></head>
-<body class="bg-zinc-950 text-emerald-300 font-mono p-8">
-<pre>❯ wmgid --login
-not signed in</pre>
-<p><a href="/auth/google">Sign in with Google</a></p>
-</body></html>`
-  );
-}
-
-function renderCard(c: any, claims: any) {
-  return c.html(
-    `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>wmgid</title>
-<link rel="stylesheet" href="/public/style.css"></head>
-<body class="bg-zinc-950 text-emerald-300 font-mono p-8">
-<pre>❯ wmgid
-${escapeHtml(JSON.stringify(claims, null, 2))}</pre>
-<form method="POST" action="/logout"><button>logout</button></form>
-</body></html>`
-  );
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (ch) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!)
-  );
 }

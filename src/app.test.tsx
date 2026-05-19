@@ -44,7 +44,7 @@ test('GET / with a valid session renders the claims', async () => {
   assert.equal(res.status, 200);
   const body = await res.text();
   assert.match(body, /jane\.doe@example\.com/);
-  assert.match(body, /&quot;sub&quot;: &quot;42&quot;/);
+  assert.match(body, /data-testid="google-id"[^>]*>42</);
 });
 
 test('GET / with a tampered cookie silently clears and shows login', async () => {

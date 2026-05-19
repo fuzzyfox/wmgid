@@ -3,3 +3,5 @@
 @theme {
   --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
 }
+
+[x-cloak] { display: none !important; }
