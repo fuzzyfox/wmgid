@@ -39,6 +39,7 @@ export const Card: FC<{ claims: StoredClaims }> = ({ claims }) => {
                 x-show="!imgFailed"
                 src={claims.picture}
                 {...{ '@error': 'imgFailed = true' }}
+                referrerpolicy="no-referrer"
                 alt=""
                 class="h-14 w-14 rounded object-cover ring-1 ring-zinc-700"
               />
