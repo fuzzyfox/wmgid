@@ -1,5 +1,10 @@
 # WMGID — What's My Google ID
 
+[![CI](https://github.com/fuzzyfox/wmgid/actions/workflows/ci.yml/badge.svg)](https://github.com/fuzzyfox/wmgid/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/fuzzyfox/wmgid)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
+[![Last commit](https://img.shields.io/github/last-commit/fuzzyfox/wmgid)](https://github.com/fuzzyfox/wmgid/commits/main)
+
 A tiny open-source debugging / curiosity tool. Sign in with Google and see the allow-listed claims Google returned about your account — most importantly your **Google ID** (`sub` claim) — with one-click copy.
 
 Useful when you need to find your own (or a teammate's) Google ID to plug into another system, or just want to see what an OpenID Connect `id_token` actually contains.
