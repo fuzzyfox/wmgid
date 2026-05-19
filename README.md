@@ -34,10 +34,35 @@ npm start
 | `SESSION_SECRET`       | yes      | HMAC key for the signed-cookie session (any long random string)         |
 | `BASE_URL`             | yes      | Public base URL of the deployed app, used to build the OAuth redirect   |
 | `ALLOWED_HD`           | no       | Restrict sign-in to a single Google Workspace hosted domain (see below) |
+| `PLAUSIBLE_DOMAIN`     | no       | Plausible site identifier. Setting this enables analytics (see below)   |
+| `PLAUSIBLE_HOST`       | no       | Plausible host (no scheme). Defaults to `plausible.io`; point at a self-hosted instance to keep data on your own infra |
 
 ### Optional: restrict to a Google Workspace domain
 
 Set `ALLOWED_HD=example.com` to only allow accounts whose `hd` claim matches. Useful if you host this internally for one organisation. Unset = anyone with a Google account can sign in.
+
+### Optional: server-side Plausible analytics
+
+Setting `PLAUSIBLE_DOMAIN` enables a minimal, opt-in analytics integration. When unset there is **zero analytics footprint** — no outbound calls, no script tag, no CSP additions.
+
+Analytics is **server-side only**: WMGID's Node process POSTs events directly to Plausible. The browser never talks to Plausible, so the CSP stays as locked-down as without analytics, and no third-party script runs in the Staff Member's session.
+
+The fixed event set is:
+
+- `pageview` — on every `GET /`
+- `Sign-in started` — when a Staff Member clicks "Sign in with Google"
+- `Sign-in cancelled` — when Google's consent screen is dismissed
+- `Sign-in success` — when the session cookie is set
+- `Sign-in rejected` — when the `hd` check fails
+- `Sign-in verify failed` — when ID-token verification throws
+
+**Forwarded to Plausible**: the derived client IP (via `CF-Connecting-IP` → leftmost `X-Forwarded-For` → `X-Real-IP`) and the inbound `User-Agent`. The `url` field is always built from `BASE_URL` plus a fixed path, never the raw request URL.
+
+**Never forwarded**: Google claims, email, `hd`, `sub`, OAuth `code`/`state`, the inbound `Referer` header, or any custom event properties. The "no server-side persistence" promise still holds — WMGID stores nothing about the Staff Member; the outbound events sit in Plausible.
+
+If Plausible is unreachable, the call is logged once via `console.warn` and sign-in continues unaffected.
+
+The server-side-only choice is recorded in [`docs/adr/0003-server-side-plausible-analytics.md`](docs/adr/0003-server-side-plausible-analytics.md).
 
 ## Tests
 
