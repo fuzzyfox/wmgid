@@ -1,53 +1,43 @@
 # WMGID — What's My Google ID
 
-A single-purpose internal staff tool. A Staff Member signs in with Google and sees the allow-listed claims Google returned about their account — most importantly their **Google ID** (`sub` claim) — with one-click copy.
+A tiny open-source debugging / curiosity tool. Sign in with Google and see the allow-listed claims Google returned about your account — most importantly your **Google ID** (`sub` claim) — with one-click copy.
 
-See [`docs/prd/wmgid.md`](docs/prd/wmgid.md) for the full PRD, [`docs/plan/wmgid.md`](docs/plan/wmgid.md) for the phased implementation plan, and [`docs/adr/`](docs/adr/) for load-bearing decisions.
+Useful when you need to find your own (or a teammate's) Google ID to plug into another system, or just want to see what an OpenID Connect `id_token` actually contains.
 
-## Stack
+**No server-side persistence.** No database, no logs of your claims. The only state is a signed-cookie session in your own browser, scoped to your session.
 
-- Node 20+
-- [Hono](https://hono.dev/) + JSX views
-- Tailwind v4 CLI (compiled at build time)
-- Alpine.js for the small client interactions
-- Signed-cookie session, no database (see ADR-0001)
+## Run it locally
 
-## Local dev
-
-1. Copy `.env.example` to `.env` and fill in the values. For Google OAuth credentials, create an OAuth 2.0 client at <https://console.cloud.google.com/apis/credentials>.
-2. To receive Google's OAuth redirect locally over HTTPS, expose the dev server via [fwd.host](https://fwd.host) (or any HTTPS tunnel). Set `BASE_URL` to the tunnel URL and add `<BASE_URL>/auth/google/callback` to the Google client's authorised redirect URIs.
-3. Install and run:
+1. Create an OAuth 2.0 client at <https://console.cloud.google.com/apis/credentials>.
+2. Copy `.env.example` to `.env` and fill in `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, and `BASE_URL`.
+3. To receive Google's OAuth redirect locally over HTTPS, expose the dev server via [fwd.host](https://fwd.host) or any HTTPS tunnel. Set `BASE_URL` to the tunnel URL and add `<BASE_URL>/auth/google/callback` to the Google client's authorised redirect URIs.
+4. Install and run:
 
    ```sh
    npm install
    npm run dev
    ```
 
-   This compiles Tailwind once, then runs the TypeScript server with hot reload. Run `npm run dev:css` in a second terminal to recompile CSS on change.
-
 ## Build & run
 
 ```sh
-npm run build   # compiles TS to dist/ and Tailwind to public/style.css
-npm start       # runs dist/index.js
+npm run build
+npm start
 ```
 
-## Deploy (Dokku)
+## Configuration
 
-```sh
-git remote add dokku dokku@<dokku-host>:wmgid
-git push dokku main
-```
+| Env var                | Required | Purpose                                                                 |
+| ---------------------- | -------- | ----------------------------------------------------------------------- |
+| `GOOGLE_CLIENT_ID`     | yes      | OAuth 2.0 client ID from Google Cloud Console                           |
+| `GOOGLE_CLIENT_SECRET` | yes      | OAuth 2.0 client secret                                                 |
+| `SESSION_SECRET`       | yes      | HMAC key for the signed-cookie session (any long random string)         |
+| `BASE_URL`             | yes      | Public base URL of the deployed app, used to build the OAuth redirect   |
+| `ALLOWED_HD`           | no       | Restrict sign-in to a single Google Workspace hosted domain (see below) |
 
-`Procfile` boots `node dist/index.js`. `CHECKS` polls `/healthz` for zero-downtime deploys. Production hostname: `wmgid.<dokku-host>`.
+### Optional: restrict to a Google Workspace domain
 
-Set env vars on the deployed app:
-
-```sh
-dokku config:set wmgid GOOGLE_CLIENT_ID=… GOOGLE_CLIENT_SECRET=… SESSION_SECRET=… BASE_URL=https://wmgid.<dokku-host>
-# optional:
-dokku config:set wmgid ALLOWED_HD=example.com
-```
+Set `ALLOWED_HD=example.com` to only allow accounts whose `hd` claim matches. Useful if you host this internally for one organisation. Unset = anyone with a Google account can sign in.
 
 ## Tests
 
@@ -55,24 +45,7 @@ dokku config:set wmgid ALLOWED_HD=example.com
 npm test
 ```
 
-Tests cover the pure modules (`claims`, `hdPolicy`, session HMAC, view formatters) and route-level integration via Hono's `app.request()`. The UI is exercised through its rendered HTML — there is no browser automation. Run the dev server and click through the flow before deploying.
+## License
 
-## Logging
+MIT — see [LICENSE](LICENSE).
 
-The server logs to stdout. Events covered:
-
-- boot (port + `BASE_URL`)
-- successful callback (`sub` + `email`)
-- `hd` rejection (required, received, email)
-- token verification failure (the error message — never the raw ID token)
-
-Cookie sets, healthchecks, and page renders are deliberately not logged.
-
-## Security headers
-
-`hono/secure-headers` middleware sets a CSP that allows `'self'` plus Google's avatar host, HSTS (1 year), `X-Content-Type-Options: nosniff`, and `Referrer-Policy: strict-origin-when-cross-origin`. CSRF on the OAuth flow is handled via a `state` round-tripped through an HttpOnly cookie. The CSP allows `'unsafe-eval'` because Alpine.js needs it — trade-off accepted (see PRD).
-
-## ADRs
-
-- [ADR-0001 — stateless signed-cookie session](docs/adr/0001-stateless-signed-cookie-session.md)
-- [ADR-0002 — opt-in hosted-domain restriction](docs/adr/0002-opt-in-hosted-domain-restriction.md)

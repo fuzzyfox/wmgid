@@ -2,7 +2,9 @@
   "name": "wmgid",
   "version": "0.1.0",
   "private": true,
-  "description": "What's My Google ID — internal staff tool",
+  "description": "What's My Google ID — Google auth debug tool with no server-side persistence",
+  "license": "MIT",
+  "author": "William Duyck",
   "type": "module",
   "scripts": {
     "build:css": "tailwindcss -i ./src/styles.css -o ./public/style.css --minify",
